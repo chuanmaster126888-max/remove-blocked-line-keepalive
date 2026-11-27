@@ -1,0 +1,35 @@
+name: Keep Render Backend Alive
+
+on:
+  schedule:
+    # Ping every 10 minutes (UTC) to prevent Render Free 15-minute idle sleep
+    - cron: '*/10 * * * *'
+    # Refresh repo commit once a month so GitHub does not disable schedules after 60 days of repo inactivity
+    - cron: '0 0 1 * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Wake or Keep-Alive Ping Render /api/v1/health
+        run: |
+          curl -sS --max-time 90 -o /dev/null -w "health http=%{http_code} time=%{time_total}s\n" \
+            "https://remove-blocked-line.onrender.com/api/v1/health" || true
+          exit 0
+
+  keep-active:
+    if: github.event.schedule == '0 0 1 * *'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Monthly heartbeat commit to keep schedules enabled
+        run: |
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .keepalive-heartbeat
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .keepalive-heartbeat
+          git diff --staged --quiet || (git commit -m "chore: monthly keepalive heartbeat" && git push)
